@@ -11,10 +11,10 @@
  * provide your team information in below.
  *
  * === User information ===
- * User 1: 
- * SSN:
- * User 2:
- * SSN:
+ * User 1: kristinnv12
+ * SSN: 0208923829
+ * User 2: ragnarp12
+ * SSN: 2801872169
  * === End User Information ===
  ********************************************************/
 
