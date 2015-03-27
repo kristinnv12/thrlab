@@ -22,8 +22,14 @@ struct chairs
 {
     struct customer **customer; /* Array of customers */
     int max;
+
+
     /* TODO: Add more variables related to threads */
     /* Hint: Think of the consumer producer thread problem */
+
+    sem_t chair;
+    sem_t mutex;
+    sem_t barber;
 };
 
 struct barber
@@ -35,7 +41,7 @@ struct barber
 struct simulator
 {
     struct chairs chairs;
-    
+
     pthread_t *barberThread;
     struct barber **barber;
 };
@@ -44,15 +50,27 @@ static void *barber_work(void *arg)
 {
     struct barber *barber = arg;
     struct chairs *chairs = &barber->simulator->chairs;
-    struct customer *customer = 0; /* TODO: Fetch a customer from a chair */
+    struct customer *customer = *chairs->customer; /* TODO: Fetch a customer from a chair */
 
     /* Main barber loop */
-    while (true) {
-	/* TODO: Here you must add you semaphores and locking logic */
-	customer = chairs->customer[0]; /* TODO: You must choose the customer */
-	thrlab_prepare_customer(customer, barber->room);
+    while (true)
+    {
+        /* TODO: Here you must add you semaphores and locking logic */
+        sem_wait(&chairs->barber);
+
+        // Use this to lock everything so no one will edit shared variables
+        sem_wait(&chairs->mutex);
+        customer = chairs->customer[0]; /* TODO: You must choose the customer */
+        thrlab_prepare_customer(customer, barber->room);
+
+        // We have edited everything and now threads can run
+        sem_post(&chairs->mutex);
+        sem_post(&chairs->chair);
+
         thrlab_sleep(5 * (customer->hair_length - customer->hair_goal));
         thrlab_dismiss_customer(customer, barber->room);
+
+        sem_post(&customer->mutex);
     }
     return NULL;
 }
@@ -65,23 +83,29 @@ static void setup(struct simulator *simulator)
     struct chairs *chairs = &simulator->chairs;
     /* Setup semaphores*/
     chairs->max = thrlab_get_num_chairs();
-    
+
+
+    sem_init(&chairs->mutex, 0, 1);
+    sem_init(&chairs->chair, 0, 1);
+    sem_init(&chairs->barber, 0, 0);
+
     /* Create chairs*/
     chairs->customer = malloc(sizeof(struct customer *) * thrlab_get_num_chairs());
-    
+
     /* Create barber thread data */
     simulator->barberThread = malloc(sizeof(pthread_t) * thrlab_get_num_barbers());
     simulator->barber = malloc(sizeof(struct barber*) * thrlab_get_num_barbers());
 
     /* Start barber threads */
     struct barber *barber;
-    for (unsigned int i = 0; i < thrlab_get_num_barbers(); i++) {
-	barber = calloc(sizeof(struct barber), 1);
-	barber->room = i;
-	barber->simulator = simulator;
-	simulator->barber[i] = barber;
-	pthread_create(&simulator->barberThread[i], 0, barber_work, barber);
-	pthread_detach(simulator->barberThread[i]);
+    for (unsigned int i = 0; i < thrlab_get_num_barbers(); i++)
+    {
+        barber = calloc(sizeof(struct barber), 1);
+        barber->room = i;
+        barber->simulator = simulator;
+        simulator->barber[i] = barber;
+        pthread_create(&simulator->barberThread[i], 0, barber_work, barber);
+        pthread_detach(simulator->barberThread[i]);
     }
 }
 
@@ -109,11 +133,28 @@ static void customer_arrived(struct customer *customer, void *arg)
     sem_init(&customer->mutex, 0, 0);
 
     /* TODO: Accept if there is an available chair */
+
+
+    // Thread will take a chair and everyone else have to wait
+    sem_wait(&chairs->chair);
+
+    // The customer waits here for the semophore to allow him to continue
+    sem_wait(&chairs->mutex);
+
+    // Accept the new customer
     thrlab_accept_customer(customer);
+
+    // Put him in the chair. Since the threads share the same variable
+    // we must take care of it so they dont read/write at the same time
     chairs->customer[0] = customer;
 
+    // Release the
+    sem_post(&chairs->mutex);
+    sem_post(&chairs->barber);
+
+    sem_wait(&customer->mutex);
     /* TODO: Reject if there are no available chairs */
-    thrlab_reject_customer(customer);
+    // thrlab_reject_customer(customer);
 }
 
 int main (int argc, char **argv)
