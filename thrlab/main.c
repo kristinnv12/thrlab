@@ -30,6 +30,10 @@ struct chairs
     sem_t chair;
     sem_t mutex;
     sem_t barber;
+
+    // Ring buffer - F17 page 8
+    int front;         /* buf[(front+1)%n] is first item */
+    int rear;          /* buf[rear%n] is last item */
 };
 
 struct barber
@@ -50,7 +54,7 @@ static void *barber_work(void *arg)
 {
     struct barber *barber = arg;
     struct chairs *chairs = &barber->simulator->chairs;
-    struct customer *customer = *chairs->customer; /* TODO: Fetch a customer from a chair */
+    struct customer *customer = 0; /* TODO: Fetch a customer from a chair */
 
     /* Main barber loop */
     while (true)
@@ -60,7 +64,10 @@ static void *barber_work(void *arg)
 
         // Use this to lock everything so no one will edit shared variables
         sem_wait(&chairs->mutex);
-        customer = chairs->customer[0]; /* TODO: You must choose the customer */
+
+        // Rais the chair count to get the next customer
+        chairs->front++;
+        customer = chairs->customer[chairs->front % chairs->max]; /* TODO: You must choose the customer */
         thrlab_prepare_customer(customer, barber->room);
 
         // We have edited everything and now threads can run
@@ -82,11 +89,15 @@ static void setup(struct simulator *simulator)
 {
     struct chairs *chairs = &simulator->chairs;
     /* Setup semaphores*/
+    chairs->front = chairs->rear = 0;
+
     chairs->max = thrlab_get_num_chairs();
 
 
     sem_init(&chairs->mutex, 0, 1);
-    sem_init(&chairs->chair, 0, 1);
+    // Here is our initial available chairs, that is we allow chairs->max to be the maximum allowed
+    // customers to wait. Beyond that the customers shall be rejected
+    sem_init(&chairs->chair, 0, chairs->max);
     sem_init(&chairs->barber, 0, 0);
 
     /* Create chairs*/
@@ -135,26 +146,42 @@ static void customer_arrived(struct customer *customer, void *arg)
     /* TODO: Accept if there is an available chair */
 
 
-    // Thread will take a chair and everyone else have to wait
-    sem_wait(&chairs->chair);
-
-    // The customer waits here for the semophore to allow him to continue
+    // Here we check if we can follow the customer to the chair
     sem_wait(&chairs->mutex);
+    int value;
+    sem_getvalue(&chairs->chair, &value);
+    //printf("Available chairs are: %d\n", value);
+    if (value != 0)
+    {
+        sem_post(&chairs->mutex);
 
-    // Accept the new customer
-    thrlab_accept_customer(customer);
+        // Thread will take a chair and everyone else have to wait
 
-    // Put him in the chair. Since the threads share the same variable
-    // we must take care of it so they dont read/write at the same time
-    chairs->customer[0] = customer;
+        sem_wait(&chairs->chair);
 
-    // Release the
-    sem_post(&chairs->mutex);
-    sem_post(&chairs->barber);
+        // The customer waits here for the semophore to allow him to continue
+        sem_wait(&chairs->mutex);
 
-    sem_wait(&customer->mutex);
-    /* TODO: Reject if there are no available chairs */
-    // thrlab_reject_customer(customer);
+        // Accept the new customer
+        thrlab_accept_customer(customer);
+
+        // Put him in the chair. Since the threads share the same variable
+        // we must take care of it so they dont read/write at the same time
+        chairs->rear++;
+        //printf("Waiting chairs: %d\n", (chairs->rear ) % (chairs->max));
+        chairs->customer[chairs->rear % chairs->max] = customer;
+
+        sem_post(&chairs->mutex);
+        sem_post(&chairs->barber);
+
+        sem_wait(&customer->mutex);
+    }
+    else
+    {
+        sem_post(&chairs->mutex);
+        /* TODO: Reject if there are no available chairs */
+        thrlab_reject_customer(customer);
+    }
 }
 
 int main (int argc, char **argv)
