@@ -55,19 +55,28 @@ struct simulator
     struct barber **barber;
 };
 
-
+/*
+This function prints out error message and prints out which error number came
+ */
 void unix_error(char *msg)
 {
     fprintf(stdout, "%s: %s\n", msg, strerror(errno));
     exit(EXIT_FAILURE);
 }
 
+/*
+Basically the same as unix_error but just another hyphen to explain more
+about which semaphore failed
+ */
 void my_error_msg(char *function, char *msg)
 {
     fprintf(stdout, "%s - %s: %s\n", function, msg, strerror(errno));
     exit(EXIT_FAILURE);
 }
 
+/*
+Wrapper for sem_post with error check
+ */
 void my_sem_post(sem_t *semi, char *errormsg)
 {
     if (sem_post(semi) == -1)
@@ -76,6 +85,9 @@ void my_sem_post(sem_t *semi, char *errormsg)
     }
 }
 
+/*
+Wrapper for sem_wait with error check
+ */
 void my_sem_wait(sem_t *semi, char *errormsg)
 {
     if (sem_wait(semi) == -1)
@@ -84,6 +96,9 @@ void my_sem_wait(sem_t *semi, char *errormsg)
     }
 }
 
+/*
+Wrapper for sem_init with error check
+ */
 void my_sem_init(sem_t *semi, int pshared, unsigned int value, char *errormsg)
 {
     if (sem_init(semi, pshared, value) == -1)
@@ -92,6 +107,9 @@ void my_sem_init(sem_t *semi, int pshared, unsigned int value, char *errormsg)
     }
 }
 
+/*
+Wrapper for pthread_create with error check
+ */
 void my_pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine) (void *), void *arg, char *errormsg)
 {
     if (pthread_create(thread, attr, start_routine, arg) != 0)
@@ -101,6 +119,9 @@ void my_pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*st
 
 }
 
+/*
+Wrapper for pthread_detach with error check
+ */
 void my_pthread_detach(pthread_t thread, char *errormsg)
 {
     if (pthread_detach(thread) != 0)
