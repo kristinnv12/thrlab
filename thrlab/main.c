@@ -27,9 +27,9 @@ struct chairs
     /* TODO: Add more variables related to threads */
     /* Hint: Think of the consumer producer thread problem */
 
-    sem_t chair;
-    sem_t mutex;
-    sem_t barber;
+    sem_t chair; // Semphore for waiting chairs
+    sem_t mutex; 
+    sem_t barber; // Semphore for the barber
 
     // Ring buffer - F17 page 8
     int front;         /* buf[(front+1)%n] is first item */
@@ -65,9 +65,8 @@ static void *barber_work(void *arg)
         // Use this to lock everything so no one will edit shared variables
         sem_wait(&chairs->mutex);
 
-        // Rais the chair count to get the next customer
-        chairs->front++;
-        customer = chairs->customer[chairs->front % chairs->max]; /* TODO: You must choose the customer */
+        //sp->buf[(++sp->rear)%(sp->n)] = item; /* Insert the item */
+        customer = chairs->customer[(++chairs->front) % chairs->max]; // Get the front customer
         thrlab_prepare_customer(customer, barber->room);
 
         // We have edited everything and now threads can run
@@ -89,7 +88,7 @@ static void setup(struct simulator *simulator)
 {
     struct chairs *chairs = &simulator->chairs;
     /* Setup semaphores*/
-    chairs->front = chairs->rear = 0;
+    chairs->front = chairs->rear = 0; // The ring buffer setup
 
     chairs->max = thrlab_get_num_chairs();
 
@@ -98,7 +97,8 @@ static void setup(struct simulator *simulator)
     // Here is our initial available chairs, that is we allow chairs->max to be the maximum allowed
     // customers to wait. Beyond that the customers shall be rejected
     sem_init(&chairs->chair, 0, chairs->max);
-    sem_init(&chairs->barber, 0, 0);
+
+    sem_init(&chairs->barber, 0, 0); // Barber semaphore
 
     /* Create chairs*/
     chairs->customer = malloc(sizeof(struct customer *) * thrlab_get_num_chairs());
@@ -143,21 +143,19 @@ static void customer_arrived(struct customer *customer, void *arg)
 
     sem_init(&customer->mutex, 0, 0);
 
-    /* TODO: Accept if there is an available chair */
-
-
     // Here we check if we can follow the customer to the chair
-    sem_wait(&chairs->mutex);
+    sem_wait(&chairs->mutex); // Lock the thread so our int value is not change by others
     int value;
-    sem_getvalue(&chairs->chair, &value);
+    sem_getvalue(&chairs->chair, &value); // Get the available chairs
     //printf("Available chairs are: %d\n", value);
-    if (value != 0)
+
+    if (value != 0) // If 1 or more chairs are available we can allow customers to sit down
     {
-        sem_post(&chairs->mutex);
 
         // Thread will take a chair and everyone else have to wait
+        sem_wait(&chairs->chair); // Now we take 1 seat.
 
-        sem_wait(&chairs->chair);
+         sem_post(&chairs->mutex); // Unlock so we can allow others to sit if chairs are available
 
         // The customer waits here for the semophore to allow him to continue
         sem_wait(&chairs->mutex);
@@ -167,20 +165,20 @@ static void customer_arrived(struct customer *customer, void *arg)
 
         // Put him in the chair. Since the threads share the same variable
         // we must take care of it so they dont read/write at the same time
-        chairs->rear++;
         //printf("Waiting chairs: %d\n", (chairs->rear ) % (chairs->max));
-        chairs->customer[chairs->rear % chairs->max] = customer;
+        //sp->buf[(++sp->rear)%(sp->n)] = item; /* Insert the item */
+        chairs->customer[(++chairs->rear) % chairs->max] = customer; // Put our arravied customer to his seat
 
         sem_post(&chairs->mutex);
-        sem_post(&chairs->barber);
+        sem_post(&chairs->barber); // Allow the barber to cut if he wants
 
-        sem_wait(&customer->mutex);
+        sem_wait(&customer->mutex); // No the customer waits for the cut
     }
     else
     {
-        sem_post(&chairs->mutex);
-        /* TODO: Reject if there are no available chairs */
-        thrlab_reject_customer(customer);
+        sem_post(&chairs->mutex); // Unlock the "value"
+
+        thrlab_reject_customer(customer); // Reject the customer because there is no seat available
     }
 }
 
