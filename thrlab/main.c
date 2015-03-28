@@ -28,7 +28,7 @@ struct chairs
     /* Hint: Think of the consumer producer thread problem */
 
     sem_t chair; // Semphore for waiting chairs
-    sem_t mutex; 
+    sem_t mutex;
     sem_t barber; // Semphore for the barber
 
     // Ring buffer - F17 page 8
@@ -143,6 +143,7 @@ static void customer_arrived(struct customer *customer, void *arg)
 
     sem_init(&customer->mutex, 0, 0);
 
+    /* This below is old solution
     // Here we check if we can follow the customer to the chair
     sem_wait(&chairs->mutex); // Lock the thread so our int value is not change by others
     int value;
@@ -150,12 +151,19 @@ static void customer_arrived(struct customer *customer, void *arg)
     //printf("Available chairs are: %d\n", value);
 
     if (value != 0) // If 1 or more chairs are available we can allow customers to sit down
+    */
+
+    // We try to take one seat and the sem_trywait should return 0 if
+    // success else -1
+    if (sem_trywait(&chairs->chair) == 0)
     {
-
+        /* Part of an old solution
         // Thread will take a chair and everyone else have to wait
-        sem_wait(&chairs->chair); // Now we take 1 seat.
+        //sem_wait(&chairs->chair); // Now we take 1 seat.
 
-         sem_post(&chairs->mutex); // Unlock so we can allow others to sit if chairs are available
+        //sem_post(&chairs->mutex); // Unlock so we can allow others to sit if chairs are available
+        */
+
 
         // The customer waits here for the semophore to allow him to continue
         sem_wait(&chairs->mutex);
@@ -176,7 +184,8 @@ static void customer_arrived(struct customer *customer, void *arg)
     }
     else
     {
-        sem_post(&chairs->mutex); // Unlock the "value"
+        // Part of an old solution
+        //sem_post(&chairs->mutex); // Unlock the "value"
 
         thrlab_reject_customer(customer); // Reject the customer because there is no seat available
     }
