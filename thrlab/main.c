@@ -62,6 +62,54 @@ void unix_error(char *msg)
     exit(EXIT_FAILURE);
 }
 
+void my_error_msg(char *function, char *msg)
+{
+    fprintf(stdout, "%s - %s: %s\n", function, msg, strerror(errno));
+    exit(EXIT_FAILURE);
+}
+
+void my_sem_post(sem_t *semi, char *errormsg)
+{
+    if (sem_post(semi) == -1)
+    {
+        my_error_msg("sem_post", errormsg);
+    }
+}
+
+void my_sem_wait(sem_t *semi, char *errormsg)
+{
+    if (sem_wait(semi) == -1)
+    {
+        my_error_msg("semwait", errormsg);
+    }
+}
+
+void my_sem_init(sem_t *semi, int pshared, unsigned int value, char *errormsg)
+{
+    if (sem_init(semi, pshared, value) == -1)
+    {
+        my_error_msg("sem_init", errormsg);
+    }
+}
+
+void my_pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine) (void *), void *arg, char *errormsg)
+{
+    if (pthread_create(thread, attr, start_routine, arg) != 0)
+    {
+        unix_error(errormsg);
+    }
+
+}
+
+void my_pthread_detach(pthread_t thread, char *errormsg)
+{
+    if (pthread_detach(thread) != 0)
+    {
+        unix_error(errormsg);
+    }
+
+}
+
 static void *barber_work(void *arg)
 {
     struct barber *barber = arg;
@@ -72,39 +120,25 @@ static void *barber_work(void *arg)
     while (true)
     {
         /* TODO: Here you must add you semaphores and locking logic */
-        if (sem_wait(&chairs->barber) == -1)
-        {
-            unix_error("sem_wait - hairs->barber");
-        }
+        my_sem_wait(&chairs->barber, "chairs->barber");
 
         // Use this to lock everything so no one will edit shared variables
-        if (sem_wait(&chairs->mutex) == -1)
-        {
-            unix_error("sem_wait - chairs->mutex");
-        }
+        my_sem_wait(&chairs->mutex, "chairs->mutex");
 
         //sp->buf[(++sp->rear)%(sp->n)] = item; /* Insert the item */
         customer = chairs->customer[(++chairs->front) % chairs->max]; // Get the front customer
         thrlab_prepare_customer(customer, barber->room);
 
         // We have edited everything and now threads can run
-        if (sem_post(&chairs->mutex) == -1)
-        {
-            unix_error("sem_post -chairs->mutex");
-        }
+        my_sem_post(&chairs->mutex, "chairs->mutex");
 
-        if (sem_post(&chairs->chair) == -1)
-        {
-            unix_error("sem_post - chairs->chairs");
-        }
+        my_sem_post(&chairs->chair, "chairs->chair");
 
         thrlab_sleep(5 * (customer->hair_length - customer->hair_goal));
         thrlab_dismiss_customer(customer, barber->room);
 
-        if (sem_post(&customer->mutex) == -1)
-        {
-            unix_error("sem_post - customer->mutex");
-        }
+        my_sem_post(&customer->mutex, "customer->mutex");
+
     }
     return NULL;
 }
@@ -121,21 +155,13 @@ static void setup(struct simulator *simulator)
     chairs->max = thrlab_get_num_chairs();
 
 
-    if (sem_init(&chairs->mutex, 0, 1) == -1)
-    {
-        unix_error("sem_init - chairs->mutex");
-    }
+    my_sem_init(&chairs->mutex, 0, 1, "chairs->mutex");
+
     // Here is our initial available chairs, that is we allow chairs->max to be the maximum allowed
     // customers to wait. Beyond that the customers shall be rejected
-    if (sem_init(&chairs->chair, 0, chairs->max) == -1)
-    {
-        unix_error("sem_init - chairs->chair");
-    }
+    my_sem_init(&chairs->chair, 0, chairs->max, "chairs->chair");
 
-    if (sem_init(&chairs->barber, 0, 0) == -1) // Barber semaphore
-    {
-        unix_error("sem_init - chairs->barber");
-    }
+    my_sem_init(&chairs->barber, 0, 0, "chairs->barber"); // Barber semaphore
 
     /* Create chairs*/
     chairs->customer = malloc(sizeof(struct customer *) * thrlab_get_num_chairs());
@@ -153,15 +179,10 @@ static void setup(struct simulator *simulator)
         barber->simulator = simulator;
         simulator->barber[i] = barber;
 
-        if (pthread_create(&simulator->barberThread[i], 0, barber_work, barber) != 0)
-        {
-            unix_error("Failed to create barberThread");
-        }
+        my_pthread_create(&simulator->barberThread[i], 0, barber_work, barber, "Failed to create barberThread");
 
-        if (pthread_detach(simulator->barberThread[i]) != 0)
-        {
-            unix_error("Failed detaching barberThread");
-        }
+        my_pthread_detach(simulator->barberThread[i], "Failed detaching barberThread");
+
     }
 }
 
@@ -186,10 +207,7 @@ static void customer_arrived(struct customer *customer, void *arg)
     struct simulator *simulator = arg;
     struct chairs *chairs = &simulator->chairs;
 
-    if (sem_init(&customer->mutex, 0, 0) == -1)
-    {
-        unix_error("sem_init - customer->mutex");
-    }
+    my_sem_init(&customer->mutex, 0, 0, "customer->mutex");
 
     /* This below is old solution
     // Here we check if we can follow the customer to the chair
@@ -213,10 +231,7 @@ static void customer_arrived(struct customer *customer, void *arg)
         */
 
         // The customer waits here for the semophore to allow him to continue
-        if (sem_wait(&chairs->mutex) == -1)
-        {
-            unix_error("sem_wait - chairs->mutex");
-        }
+        my_sem_wait(&chairs->mutex, "chairs->mutex");
 
         // Accept the new customer
         thrlab_accept_customer(customer);
@@ -227,19 +242,11 @@ static void customer_arrived(struct customer *customer, void *arg)
         //sp->buf[(++sp->rear)%(sp->n)] = item; /* Insert the item */
         chairs->customer[(++chairs->rear) % chairs->max] = customer; // Put our arravied customer to his seat
 
-        if (sem_post(&chairs->mutex) == -1)
-        {
-            unix_error("sem_post - chairs->mutex");
-        }
-        if (sem_post(&chairs->barber) == -1) // Allow the barber to cut if he wants
-        {
-            unix_error("sem_post - chairs->barber");
-        }
+        my_sem_post(&chairs->mutex, "chairs->mutex");
+        my_sem_post(&chairs->barber, "chairs->barber"); // Allow the barber to cut if he wants
 
-        if (sem_wait(&customer->mutex) == -1) // No the customer waits for the cut
-        {
-            unix_error("sem_wait - customer->mutex");
-        }
+        my_sem_wait(&customer->mutex, "customer->mutex");// No the customer waits for the cut
+
     }
     else
     {
